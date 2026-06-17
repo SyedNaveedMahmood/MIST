@@ -37,10 +37,14 @@ class Config:
     mae_epochs: int = 30
     mask_ratio: float = 0.75
     mae_freq_weight: float = 0.0
-    mae_loss_mode: str = "band"       # "raw" | "freq" | "band" (morphology MAE)
-                                      # default "band": raw-MSE discards the
-                                      # spindle band (see MORPHOLOGY_ANALYSIS.md).
+    mae_loss_mode: str = "whiten"     # "raw"|"freq"|"band"|"whiten" (morphology)
+                                      # default "whiten": pre-whitened spectrum
+                                      # is the root-cause fix for the 1/f bias
+                                      # that makes raw-MSE discard the spindle
+                                      # band (see MORPHOLOGY_ANALYSIS.md).
     mae_spectral_weight: float = 1.0
+    mae_aux_envelope: bool = True     # auxiliary sigma-band envelope head
+    mae_lambda_env: float = 1.0
 
     # objective weights
     use_wco: bool = True

@@ -68,12 +68,14 @@ def raw_bandpower_probe(X, labels, fs=100, split=0.7, seed=0):
 
 
 def train_variant(loss_mode, X_train, X_test, masks_test, labels_test, fs,
-                  epochs, lr, seed, band_weights=None, freq_weight=0.0):
+                  epochs, lr, seed, band_weights=None, freq_weight=0.0,
+                  aux_envelope=False):
     torch.manual_seed(seed)
     np.random.seed(seed)
     pre = MAEPretrainer("cpu", mask_ratio=0.75, lr=lr, loss_mode=loss_mode,
                         fs=fs, band_weights=band_weights,
-                        freq_weight=freq_weight, spectral_weight=1.0)
+                        freq_weight=freq_weight, spectral_weight=1.0,
+                        aux_envelope=aux_envelope)
     loader = _loader(X_train, seed=seed)
     last = None
     for _ in range(epochs):
@@ -106,9 +108,10 @@ def run(n_train=1200, n_test=400, epochs=40, lr=1e-3, seeds=(0, 1, 2)):
     fs = cfg.fs
     variants = {
         "raw": dict(loss_mode="raw"),
-        "freq": dict(loss_mode="freq", freq_weight=0.1),
         "band": dict(loss_mode="band",
                      band_weights={"sigma": 10.0, "beta": 3.0, "alpha": 2.0}),
+        "whiten": dict(loss_mode="whiten"),
+        "whiten_env": dict(loss_mode="whiten", aux_envelope=True),
     }
     agg = {v: [] for v in variants}
     agg["random_enc"] = []
@@ -147,29 +150,32 @@ def summarize(agg, bands):
     def p(s=""):
         print(s); lines.append(s)
 
-    p("\n" + "=" * 70)
+    # recon variants = everything except the probe-only controls
+    rvars = [v for v in agg if v not in ("random_enc", "raw_bandpower")]
+
+    p("\n" + "=" * 86)
     p("BAND-RESOLVED RELATIVE RECON ERROR  (mean+/-std, lower=better)")
-    p("=" * 70)
-    p(f"  {'band':<8}" + "".join(f"{v:>18}" for v in ("raw", "freq", "band")))
+    p("=" * 86)
+    p(f"  {'band':<8}" + "".join(f"{v:>18}" for v in rvars))
     for b in bands:
         row = f"  {b:<8}"
-        for v in ("raw", "freq", "band"):
+        for v in rvars:
             m, s = _ms([r["band_err"][b]["rel"] for r in agg[v]])
             row += f"{m:>10.3f}+/-{s:<5.3f}"
         p(row)
 
     p("\nSPINDLE-BAND FIDELITY on masked spindle regions (mean+/-std)")
+    p(f"  {'':12}" + "".join(f"{v:>18}" for v in rvars))
     for metric in ("corr", "rel_err", "power_ratio"):
         row = f"  {metric:<12}"
-        for v in ("raw", "freq", "band"):
+        for v in rvars:
             m, s = _ms([r["spindle"][metric] for r in agg[v]])
             row += f"{m:>10.3f}+/-{s:<5.3f}"
         p(row)
-    p(f"  ({'':12}" + "".join(f"{v:>18}" for v in ("raw", "freq", "band")) + ")")
 
     p("\nFROZEN-ENCODER LINEAR PROBE  accuracy (mean+/-std)")
     p("  includes RANDOM-encoder and RAW-bandpower controls")
-    cols = ("raw", "freq", "band", "random_enc", "raw_bandpower")
+    cols = tuple(rvars) + ("random_enc", "raw_bandpower")
     p(f"  {'event':<10}" + "".join(f"{c:>16}" for c in cols))
     events = list(agg["raw"][0]["probes"].keys())
     for ev in events:

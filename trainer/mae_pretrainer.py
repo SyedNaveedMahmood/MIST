@@ -8,17 +8,21 @@
 #             morphology-targeting variant the critique recommends.
 import torch
 
-from model.mae import MaskedAutoencoder, recon_loss, band_weighted_recon_loss
+from model.mae import (MaskedAutoencoder, recon_loss, band_weighted_recon_loss,
+                       whitened_recon_loss, sigma_envelope, envelope_loss)
 
 
 class MAEPretrainer:
     def __init__(self, device, afr_reduced_cnn_size=30, out_len=3000,
                  mask_ratio=0.75, lr=1e-3, weight_decay=1e-4, freq_weight=0.0,
                  loss_mode="raw", fs=100, band_weights=None,
-                 spectral_weight=1.0):
+                 spectral_weight=1.0, aux_envelope=False, lambda_env=1.0):
         self.device = device
+        self.aux_envelope = aux_envelope
+        self.lambda_env = lambda_env
         self.model = MaskedAutoencoder(
-            afr_reduced_cnn_size, out_len, mask_ratio).to(device)
+            afr_reduced_cnn_size, out_len, mask_ratio,
+            aux_envelope=aux_envelope).to(device)
         self.opt = torch.optim.Adam(self.model.parameters(), lr=lr,
                                     weight_decay=weight_decay)
         self.freq_weight = freq_weight
@@ -28,6 +32,8 @@ class MAEPretrainer:
         self.spectral_weight = spectral_weight
 
     def _loss(self, recon, x, mask):
+        if self.loss_mode == "whiten":
+            return whitened_recon_loss(recon, x, mask)
         if self.loss_mode == "band":
             return band_weighted_recon_loss(
                 recon, x, mask, fs=self.fs, band_weights=self.band_weights,
@@ -43,8 +49,11 @@ class MAEPretrainer:
             x = batch[0] if isinstance(batch, (list, tuple)) else batch
             x = x.to(self.device)
             self.opt.zero_grad()
-            recon, mask = self.model(x)
+            recon, mask, env = self.model(x)
             loss = self._loss(recon, x, mask)
+            if self.aux_envelope and env is not None:
+                tgt_env = sigma_envelope(x, fs=self.fs)
+                loss = loss + self.lambda_env * envelope_loss(env, tgt_env, mask)
             loss.backward()
             self.opt.step()
             total += loss.item() * len(x)
@@ -56,7 +65,8 @@ class MAEPretrainer:
         """Return (recon, mask) for analysis (band-resolved error, probes)."""
         self.model.eval()
         x = x.to(self.device)
-        return self.model(x)
+        recon, mask, _ = self.model(x)
+        return recon, mask
 
     def encoder_state_dict(self):
         return {f"encoder.{k}": v

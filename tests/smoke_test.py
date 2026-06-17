@@ -57,7 +57,7 @@ def main():
         mae = MaskedAutoencoder(mask_ratio=0.75)
         xm, mask = concentrated_mask(xb)
         assert abs(mask.float().mean().item() - 0.75) < 0.02, mask.float().mean()
-        recon, mask = mae(xb)
+        recon, mask, _ = mae(xb)
         print("recon:", tuple(recon.shape), "loss:", recon_loss(recon, xb, mask).item())
 
         # MAE pretrain one epoch -> load encoder

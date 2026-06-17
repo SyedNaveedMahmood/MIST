@@ -21,6 +21,7 @@ TEST_MODULES = [
     "tests.test_normalization",
     "tests.test_metrics",
     "tests.test_trainer_ablations",
+    "tests.test_morphology_mae",
 ]
 
 

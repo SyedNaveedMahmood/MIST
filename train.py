@@ -70,7 +70,9 @@ def run(cfg, args):
         pre = MAEPretrainer(device, cfg.afr_reduced_cnn_size, cfg.epoch_len,
                             cfg.mask_ratio, freq_weight=cfg.mae_freq_weight,
                             loss_mode=cfg.mae_loss_mode, fs=cfg.fs,
-                            spectral_weight=cfg.mae_spectral_weight)
+                            spectral_weight=cfg.mae_spectral_weight,
+                            aux_envelope=cfg.mae_aux_envelope,
+                            lambda_env=cfg.mae_lambda_env)
         for e in range(cfg.mae_epochs):
             l = pre.train_epoch(train_loader)
             if e % 5 == 0 or e == cfg.mae_epochs - 1:

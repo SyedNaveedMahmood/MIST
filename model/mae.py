@@ -53,17 +53,23 @@ class ConvDecoder(nn.Module):
 
 
 class MaskedAutoencoder(nn.Module):
-    def __init__(self, afr_reduced_cnn_size=30, out_len=3000, mask_ratio=0.75):
+    def __init__(self, afr_reduced_cnn_size=30, out_len=3000, mask_ratio=0.75,
+                 aux_envelope=False):
         super().__init__()
         self.encoder = MRCNN(afr_reduced_cnn_size)
         self.decoder = ConvDecoder(afr_reduced_cnn_size, out_len)
         self.mask_ratio = mask_ratio
+        # Optional second head predicting the sigma-band analytic envelope, so
+        # the encoder is forced to represent spindle morphology explicitly.
+        self.aux_envelope = aux_envelope
+        self.env_head = ConvDecoder(afr_reduced_cnn_size, out_len) if aux_envelope else None
 
     def forward(self, x):
         x_masked, mask = concentrated_mask(x, self.mask_ratio)
         feat = self.encoder(x_masked)
         recon = self.decoder(feat)
-        return recon, mask
+        env = self.env_head(feat) if self.aux_envelope else None
+        return recon, mask, env
 
 
 def recon_loss(recon, target, mask, freq_weight=0.0):
@@ -134,3 +140,53 @@ def band_weighted_recon_loss(recon, target, mask, fs=100, band_weights=None,
     w = band_weight_vector(n, fs, band_weights, device=recon.device)
     spec = (w * (rmag - tmag) ** 2).mean()
     return time_mse + spectral_weight * spec
+
+
+def whitened_recon_loss(recon, target, mask, time_weight=0.1, eps=1e-6):
+    """Pre-whitened (spectrally-flattened) reconstruction loss -- the ROOT-CAUSE
+    fix for raw-MSE spectral bias (RESEARCH_CRITIQUE.md #1).
+
+    EEG power follows ~1/f, so plain MSE is power-weighted and the optimizer
+    ignores low-power bands (e.g. the 11-16 Hz spindle band). Here the per-bin
+    magnitude error is divided by a per-frequency reference magnitude (the
+    detached batch-mean target magnitude), so EVERY frequency contributes
+    equally regardless of its power. A small time-domain MSE keeps the
+    reconstruction phase-aligned.
+
+    Args:
+        recon, target: (B,1,T).
+        mask: (B,1,T) bool, masked positions.
+        time_weight: weight on the auxiliary time-domain MSE term.
+    """
+    diff = (recon - target) ** 2
+    time_mse = (diff * mask).sum() / (mask.sum() + 1e-8)
+    rmag = torch.fft.rfft(recon * mask, dim=-1).abs()
+    tmag = torch.fft.rfft(target * mask, dim=-1).abs()
+    # per-frequency reference: mean target magnitude across the batch (detached)
+    ref = tmag.mean(dim=0, keepdim=True).detach() + eps
+    whitened = ((rmag - tmag) / ref) ** 2
+    return whitened.mean() + time_weight * time_mse
+
+
+def sigma_envelope(x, fs=100, lo=11.0, hi=16.0):
+    """Analytic-signal envelope of the sigma/spindle band (FFT bandpass +
+    Hilbert). Returns (B,1,T), the morphology target for the auxiliary head."""
+    n = x.shape[-1]
+    X = torch.fft.fft(x, dim=-1)
+    freqs = torch.fft.fftfreq(n, d=1.0 / fs, device=x.device)
+    band = (freqs.abs() >= lo) & (freqs.abs() < hi)
+    Xb = X * band.view(1, 1, -1)
+    # analytic signal: zero negative freqs, double positive freqs
+    h = torch.zeros(n, device=x.device)
+    if n % 2 == 0:
+        h[0] = 1; h[n // 2] = 1; h[1:n // 2] = 2
+    else:
+        h[0] = 1; h[1:(n + 1) // 2] = 2
+    analytic = torch.fft.ifft(Xb * h.view(1, 1, -1), dim=-1)
+    return analytic.abs()
+
+
+def envelope_loss(pred_env, target_env, mask):
+    """MSE between predicted and true sigma envelope on masked positions."""
+    diff = (pred_env - target_env) ** 2
+    return (diff * mask).sum() / (mask.sum() + 1e-8)
