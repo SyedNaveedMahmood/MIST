@@ -60,14 +60,17 @@ def run(cfg, args):
         train_files, test_files = kfold_split(src_files, cfg.n_folds, args.fold)
 
     train_loader, test_loader, train_ds, _ = make_loaders(
-        train_files, test_files, cfg.batch_size, cfg.num_workers)
+        train_files, test_files, cfg.batch_size, cfg.num_workers,
+        norm_mode=cfg.norm_mode, fs=cfg.fs)
     cw = class_weights(train_ds, cfg.num_classes)
 
     # ---- Stage 1: MAE pre-training ----
     mae_state = None
     if cfg.use_mae:
         pre = MAEPretrainer(device, cfg.afr_reduced_cnn_size, cfg.epoch_len,
-                            cfg.mask_ratio, freq_weight=cfg.mae_freq_weight)
+                            cfg.mask_ratio, freq_weight=cfg.mae_freq_weight,
+                            loss_mode=cfg.mae_loss_mode, fs=cfg.fs,
+                            spectral_weight=cfg.mae_spectral_weight)
         for e in range(cfg.mae_epochs):
             l = pre.train_epoch(train_loader)
             if e % 5 == 0 or e == cfg.mae_epochs - 1:
@@ -82,7 +85,9 @@ def run(cfg, args):
     trainer = Trainer(model, device, class_weight=cw, use_wco=cfg.use_wco,
                       lambda_wco=cfg.lambda_wco, lambda_div=cfg.lambda_div,
                       lambda_r=cfg.lambda_r, lr=cfg.lr,
-                      weight_decay=cfg.weight_decay, fs=cfg.fs)
+                      weight_decay=cfg.weight_decay, fs=cfg.fs,
+                      use_supcon=cfg.use_supcon, lambda_supcon=cfg.lambda_supcon,
+                      supcon_temp=cfg.supcon_temp)
     if cfg.use_prototype:
         trainer.init_prototypes(train_loader)
 
@@ -107,7 +112,11 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--data_dir", default="data/edf20")
     p.add_argument("--target_dir", default=None)
-    p.add_argument("--ablation", default="A7", choices=["A1", "A2", "A3", "A4", "A5", "A7"])
+    p.add_argument("--ablation", default="A7",
+                   choices=["A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8"])
+    p.add_argument("--norm_mode", default=None,
+                   choices=["none", "znorm", "psd"],
+                   help="label-free normalization baseline (overrides config)")
     p.add_argument("--fold", type=int, default=0)
     p.add_argument("--transfer", action="store_true")
     p.add_argument("--epochs", type=int, default=None)
@@ -120,6 +129,8 @@ def main():
         overrides["epochs"] = args.epochs
     if args.mae_epochs is not None:
         overrides["mae_epochs"] = args.mae_epochs
+    if args.norm_mode is not None:
+        overrides["norm_mode"] = args.norm_mode
     cfg = make_config(args.ablation, **overrides)
     run(cfg, args)
 

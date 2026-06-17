@@ -36,9 +36,14 @@ class MISTSleep(nn.Module):
             out = self.prototype(feat)
             feat = out["seq_out"]            # (B, C, P==L)
             aux = out
-        enc = self.tce(feat)
-        enc = enc.contiguous().view(enc.size(0), -1)
-        logits = self.fc(enc)
+        enc = self.tce(feat)                 # (B, C, d_model)
+        # Pooled epoch embedding (mean over the TCE channel axis). Used by
+        # A5 (WCO-on-embedding, no prototype) and SupCon (A6/A8). When a
+        # prototype is present, aux["z_epoch"] is the prototype-mixture embedding;
+        # this pooled TCE embedding is always available regardless of ablation.
+        aux["embedding"] = enc.mean(dim=1)   # (B, d_model)
+        flat = enc.contiguous().view(enc.size(0), -1)
+        logits = self.fc(flat)
         return logits, aux
 
     def load_encoder(self, state_dict):

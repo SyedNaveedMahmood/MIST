@@ -16,11 +16,19 @@ class SleepEDFDataset(Dataset):
     x is reshaped to (N, 1, T) for the single-channel MRCNN. Labels are int64.
     """
 
-    def __init__(self, npz_files):
+    def __init__(self, npz_files, norm_mode="none", reference_psd=None, fs=100):
+        # Per-recording normalization (baselines, RESEARCH_CRITIQUE.md #6) is
+        # applied independently to EACH recording before concatenation, so the
+        # z-norm / PSDNorm statistics are per-recording (label-free).
+        from baselines.normalization import apply_norm
         xs, ys = [], []
         for f in npz_files:
             with np.load(f) as d:
-                xs.append(d["x"])
+                xr = np.asarray(d["x"], dtype=np.float32)
+                if norm_mode != "none":
+                    xr = apply_norm(xr, mode=norm_mode,
+                                    reference_psd=reference_psd, fs=fs)
+                xs.append(xr)
                 ys.append(d["y"])
         x = np.concatenate(xs, axis=0).astype(np.float32)
         y = np.concatenate(ys, axis=0).astype(np.int64)
@@ -76,9 +84,12 @@ def class_weights(dataset, num_classes=5):
     return torch.tensor(w, dtype=torch.float32)
 
 
-def make_loaders(train_files, test_files, batch_size=128, num_workers=2):
-    train_ds = SleepEDFDataset(train_files)
-    test_ds = SleepEDFDataset(test_files)
+def make_loaders(train_files, test_files, batch_size=128, num_workers=2,
+                 norm_mode="none", reference_psd=None, fs=100):
+    train_ds = SleepEDFDataset(train_files, norm_mode=norm_mode,
+                               reference_psd=reference_psd, fs=fs)
+    test_ds = SleepEDFDataset(test_files, norm_mode=norm_mode,
+                              reference_psd=reference_psd, fs=fs)
     train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True,
                               num_workers=num_workers, drop_last=False)
     test_loader = DataLoader(test_ds, batch_size=batch_size, shuffle=False,

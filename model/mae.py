@@ -74,3 +74,61 @@ def recon_loss(recon, target, mask, freq_weight=0.0):
         tf = torch.fft.rfft(target, dim=-1).abs()
         masked = masked + freq_weight * ((rf - tf) ** 2).mean()
     return masked
+
+
+def band_weight_vector(n, fs, band_weights, device=None):
+    """Per-frequency weight vector over the rfft bins for band-weighted MSE.
+
+    Args:
+        n: signal length (samples).
+        fs: sampling rate.
+        band_weights: dict (lo,hi)->weight, OR name->weight using BAND_RANGES.
+                      Frequencies not covered get weight 1.0.
+    Returns:
+        (n//2 + 1,) float tensor of per-bin weights.
+    """
+    freqs = torch.fft.rfftfreq(n, d=1.0 / fs)
+    if device is not None:
+        freqs = freqs.to(device)
+    w = torch.ones_like(freqs)
+    for band, weight in band_weights.items():
+        lo, hi = BAND_RANGES[band] if isinstance(band, str) else band
+        sel = (freqs >= lo) & (freqs < hi)
+        w = torch.where(sel, torch.as_tensor(float(weight), device=w.device), w)
+    return w
+
+
+# Canonical bands so the band-weighted loss can be specified by name.
+BAND_RANGES = {
+    "delta": (0.5, 4.0), "theta": (4.0, 8.0), "alpha": (8.0, 11.0),
+    "sigma": (11.0, 16.0), "beta": (16.0, 30.0),
+}
+
+
+def band_weighted_recon_loss(recon, target, mask, fs=100, band_weights=None,
+                             spectral_weight=1.0):
+    """Band-weighted reconstruction loss to counter raw-MSE spectral bias.
+
+    Combines a masked time-domain MSE (keeps the signal aligned) with a
+    *band-weighted magnitude-spectrum MSE* that UP-WEIGHTS chosen bands -- by
+    default the sigma/spindle band (11-16 Hz) -- so the encoder is pushed to
+    reconstruct the morphology that raw MSE ignores (RESEARCH_CRITIQUE.md #1).
+
+    Args:
+        recon, target: (B,1,T).
+        mask: (B,1,T) bool, masked positions.
+        band_weights: dict band->weight; default up-weights sigma 10x, beta 3x.
+        spectral_weight: scale on the spectral term relative to time MSE.
+    """
+    if band_weights is None:
+        band_weights = {"sigma": 10.0, "beta": 3.0, "alpha": 2.0}
+    diff = (recon - target) ** 2
+    time_mse = (diff * mask).sum() / (mask.sum() + 1e-8)
+
+    # Apply mask before FFT so the spectral term focuses on reconstructed region.
+    rmag = torch.fft.rfft(recon * mask, dim=-1).abs()
+    tmag = torch.fft.rfft(target * mask, dim=-1).abs()
+    n = recon.shape[-1]
+    w = band_weight_vector(n, fs, band_weights, device=recon.device)
+    spec = (w * (rmag - tmag) ** 2).mean()
+    return time_mse + spectral_weight * spec

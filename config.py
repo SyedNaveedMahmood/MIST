@@ -37,6 +37,8 @@ class Config:
     mae_epochs: int = 30
     mask_ratio: float = 0.75
     mae_freq_weight: float = 0.0
+    mae_loss_mode: str = "raw"        # "raw" | "freq" | "band" (morphology MAE)
+    mae_spectral_weight: float = 1.0
 
     # objective weights
     use_wco: bool = True
@@ -44,14 +46,26 @@ class Config:
     lambda_div: float = 0.05
     lambda_r: float = 0.2
 
+    # SupCon (A6 / A8)
+    use_supcon: bool = False
+    lambda_supcon: float = 0.5
+    supcon_temp: float = 0.1
+
+    # normalization baseline (RESEARCH_CRITIQUE.md #6): "none" | "znorm" | "psd"
+    norm_mode: str = "none"
+
 
 ABLATIONS = {
-    "A1": dict(use_mae=False, use_prototype=False, use_wco=False),
-    "A2": dict(use_mae=True, use_prototype=False, use_wco=False),
-    "A3": dict(use_mae=False, use_prototype=True, use_wco=False),
-    "A4": dict(use_mae=True, use_prototype=True, use_wco=False),
-    "A5": dict(use_mae=True, use_prototype=False, use_wco=False),  # WCO-on-embedding TODO
-    "A7": dict(use_mae=True, use_prototype=True, use_wco=True),
+    # A1 AttnSleep | A2 +MAE | A3 +proto(rand) | A4 +proto(MAE)
+    # A5 +WCO on embedding (no proto) | A6 +SupCon | A7 full | A8 full+SupCon
+    "A1": dict(use_mae=False, use_prototype=False, use_wco=False, use_supcon=False),
+    "A2": dict(use_mae=True, use_prototype=False, use_wco=False, use_supcon=False),
+    "A3": dict(use_mae=False, use_prototype=True, use_wco=False, use_supcon=False),
+    "A4": dict(use_mae=True, use_prototype=True, use_wco=False, use_supcon=False),
+    "A5": dict(use_mae=True, use_prototype=False, use_wco=True, use_supcon=False),
+    "A6": dict(use_mae=True, use_prototype=False, use_wco=False, use_supcon=True),
+    "A7": dict(use_mae=True, use_prototype=True, use_wco=True, use_supcon=False),
+    "A8": dict(use_mae=True, use_prototype=True, use_wco=True, use_supcon=True),
 }
 
 
