@@ -133,3 +133,35 @@ Observed numbers (epochs=10, n_train=400, n_test=150, seed=0; synthetic, noisy):
   when min prototype distance < 1; keep weight small, revisit if unstable.
 - Per-recording z-norm assumed already applied in preprocessing (AttnSleep npz).
 - No real-data validation yet — numbers above are synthetic.
+
+## Checkpoint 3 — Morphology scientific analysis (2026-06-17)
+Status: **DONE.** `MORPHOLOGY_ANALYSIS.md` committed; harness fixes applied.
+
+Scientist agent rigorously tested the central claim (does MAE become
+morphology-aware?). Multi-seed (0,1,2), 20-epoch, raw vs freq vs band MAE on
+synthetic labelled EEG, WITH two probe controls (random encoder, raw band-power).
+
+VERDICTS:
+- raw-MSE MAE does NOT learn spindle morphology: spindle-band power_ratio = 0.000
+  (loses ~all spindle energy); low-freq preference visible (delta best band).
+- band-weighting RECOVERS reconstruction: ~3x lower band errors, spindle
+  power_ratio 0.302 +/- 0.037. Energy/envelope recovered, not phase-accurate
+  waveform (corr~0) at this budget.
+- Linear-probe decodability is the SAME across raw/freq/band AND vs a random
+  encoder AND vs a 5-number raw-bandpower baseline -> the probe was CONFOUNDED by
+  raw signal energy. Fixed: added random-encoder + raw-bandpower controls in
+  `morphology/run_analysis.py`; probe claims must now beat controls.
+
+ACTIONS TAKEN:
+- config.py: default `mae_loss_mode` changed "raw" -> "band" (P0 recommendation).
+- model/mae.py: vectorised concentrated_mask (speed).
+- Added morphology/run_analysis.py (multi-seed runner + controls).
+
+NEXT (P0/P1 from MORPHOLOGY_ANALYSIS.md s5):
+- Add spindle-LOCALIZATION probe (per-window mask) — not decodable from global
+  band energy, the real morphology test in latent space.
+- Sweep sigma weight {3,10,30}; add sigma-only config (beta over-starved at x3).
+- Consider STFT/spectrogram reconstruction target (LaBraM-style) for true
+  waveform morphology.
+- Validate on REAL EDF with expert spindle annotations before shipping the claim.
+- Still pending overall: M0 real EDF-20 baseline run (needs npz data).

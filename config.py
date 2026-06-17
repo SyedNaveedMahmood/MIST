@@ -37,7 +37,9 @@ class Config:
     mae_epochs: int = 30
     mask_ratio: float = 0.75
     mae_freq_weight: float = 0.0
-    mae_loss_mode: str = "raw"        # "raw" | "freq" | "band" (morphology MAE)
+    mae_loss_mode: str = "band"       # "raw" | "freq" | "band" (morphology MAE)
+                                      # default "band": raw-MSE discards the
+                                      # spindle band (see MORPHOLOGY_ANALYSIS.md).
     mae_spectral_weight: float = 1.0
 
     # objective weights

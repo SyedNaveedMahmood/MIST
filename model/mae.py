@@ -22,9 +22,11 @@ def concentrated_mask(x, mask_ratio=0.75):
     block = int(round(mask_ratio * t))
     mask = torch.zeros(b, 1, t, dtype=torch.bool, device=x.device)
     if block > 0:
+        # Vectorised contiguous-block mask (no python per-sample loop):
         starts = torch.randint(0, t - block + 1, (b,), device=x.device)
-        for i in range(b):
-            mask[i, 0, starts[i]:starts[i] + block] = True
+        ar = torch.arange(t, device=x.device).unsqueeze(0)          # (1,T)
+        sel = (ar >= starts.unsqueeze(1)) & (ar < (starts + block).unsqueeze(1))
+        mask[:, 0, :] = sel
     x_masked = x.clone()
     x_masked[mask] = 0.0
     return x_masked, mask
