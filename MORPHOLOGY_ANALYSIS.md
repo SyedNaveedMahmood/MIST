@@ -289,6 +289,32 @@ is apples-to-apples.
 
 ---
 
+## 5b. Update — pre-whitening loss + sigma-envelope head (Checkpoint 4)
+
+Two root-cause variants were added after this analysis (`mae_loss_mode="whiten"`,
+optional `aux_envelope`):
+- **whiten**: per-frequency pre-whitened spectrum MSE (each rfft-bin error divided
+  by the detached batch-mean target magnitude). Unlike band-weighting it
+  privileges NO band a priori — it equalizes all frequencies, attacking the 1/f
+  power-weighting that is the *mechanism* of the spectral bias.
+- **whiten_env**: whiten + an auxiliary head reconstructing the 11-16 Hz analytic
+  envelope on masked regions, forcing explicit spindle-morphology representation.
+
+### On validating with synthetic data (methodological note)
+Synthetic data legitimately tests the **mechanism** (does the loss stop discarding
+the spindle band) because ground-truth events and band structure are known.
+Crucially, **pre-whitening is a less circular synthetic test than band-weighting**:
+band-weighting injects spindles at 11-16 Hz and then up-weights 11-16 Hz (partly
+tautological), whereas pre-whitening recovers spindle-band energy *without being
+told where to look*. What synthetic data **cannot** establish is the **claim** that
+the encoder is "morphology-aware" in a way that helps real staging/transfer — that
+requires real EDF with expert spindle annotations (MODA/MASS) plus downstream
+metrics. Synthetic is a necessary sanity check, not the verdict.
+
+(Head-to-head whiten vs raw/band numbers from `morphology/run_analysis.py` are
+appended to `results/morph_whiten.json` when run; per the implement-only scope the
+full multi-seed comparison is deferred.)
+
 ## 6. Honest gaps / limitations
 - Synthetic only; no real EDF event annotations yet (P1 above).
 - 20 epochs / 400 train / 3 seeds — CPU-limited; trend is converged for

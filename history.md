@@ -165,3 +165,37 @@ NEXT (P0/P1 from MORPHOLOGY_ANALYSIS.md s5):
   waveform morphology.
 - Validate on REAL EDF with expert spindle annotations before shipping the claim.
 - Still pending overall: M0 real EDF-20 baseline run (needs npz data).
+
+## Checkpoint 4 — Morphology-targeting MAE (pre-whitening + envelope) (2026-06-17)
+Status: **IMPLEMENTED (user chose "implement only"); validation deferred.**
+
+Two root-cause MAE redesigns added (RESEARCH_CRITIQUE.md #1: raw-MSE is power-
+weighted by EEG 1/f, so it ignores low-power bands like sigma/spindles):
+- `model/mae.py::whitened_recon_loss` — per-frequency PRE-WHITENED spectrum MSE:
+  divides each rfft-bin error by the detached batch-mean target magnitude, so
+  every frequency contributes equally regardless of power. The principled fix;
+  privileges NO band a priori (unlike band-weighting). mae_loss_mode="whiten"
+  is now the config DEFAULT. (User explicitly chose this option.)
+- `model/mae.py::sigma_envelope` + optional envelope head on MaskedAutoencoder
+  (`aux_envelope`) — predicts the 11-16Hz analytic envelope on masked regions,
+  forcing explicit spindle-morphology representation. config mae_aux_envelope.
+- Wired into MAEPretrainer (loss_mode "whiten"; aux_envelope/lambda_env), config,
+  train.py. run_analysis.py now compares raw/band/whiten/whiten_env.
+- tests/test_morphology_mae.py (7 tests). Full suite: **40 passed**.
+
+METHODOLOGY NOTE (user asked: does synthetic-data testing make sense?):
+- Synthetic data validly tests the MECHANISM (does the loss stop discarding the
+  spindle band) because we have ground-truth events + known band structure.
+- Pre-whitening is the MORE HONEST synthetic test than band-weighting: it does
+  not privilege 11-16Hz a priori, so recovering spindle energy is not tautological
+  (band-weighting partly is: inject at sigma, up-weight sigma).
+- Synthetic CANNOT validate the CLAIM ("encoder is morphology-aware and helps
+  staging/transfer"). That needs REAL EDF + expert spindle annotations
+  (MODA/MASS) + downstream metrics. Synthetic = necessary sanity, not verdict.
+
+NEXT:
+- Real-data validation plan (deferred per user): run band-resolved recon +
+  spindle-localization probe on real EDF spindle-annotated data; then compare
+  whiten vs raw on downstream EDF-20 staging + EDF-78->EDF-20 transfer.
+- Optional future: time-frequency (STFT/scalogram) reconstruction target (LaBraM-
+  style) for phase-accurate waveform morphology (corr~0 limitation at this budget).
